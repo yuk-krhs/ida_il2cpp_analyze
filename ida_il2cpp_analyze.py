@@ -2,12 +2,13 @@
 # -*- coding: utf-8 -*-
 import sys
 import os
+import re
 
 try:
   import idc
   import idaapi
   import idautils
-  import re
+  import ida_il2cpp_metadata
 except:
   sys.exit()
 
@@ -15,9 +16,24 @@ except:
 name_re     = re.compile(r'^\((((a)|(off_))\w+)')
 method_re   = re.compile(r'^[\w.:]+')
 nameref_re  = re.compile(r'((g_)|(off_)|(dword_)|(unk_))[^ .]+')
+metadata    = None
 is_x86 = False
 is_x64 = False
 is_ARM = False
+
+def load_metadata():
+  global metadata
+
+  print('load_metadata')
+
+  dir = os.path.dirname(idc.GetIdbPath())
+  metafile = dir + '/' + 'global-metadata.dat'
+
+  if not os.path.exists(metafile):
+    print('  File not found. %s' % metafile)
+    return
+
+  metadata = ida_il2cpp_metadata.IL2CppMetaData(metafile)
 
 #-------------------------------------------------------------------------------
 def main():
@@ -36,6 +52,7 @@ def main():
     return
 
   def_struct()
+  load_metadata()
 
   code_reg, meta_reg = analyze_reg()
 
@@ -355,6 +372,8 @@ def analyze_reg():
 
 #-------------------------------------------------------------------------------
 def analyze_code_reg(code_reg):
+  global metadata
+
   print('analyze_code_reg')
 
   names = [
@@ -378,6 +397,8 @@ def analyze_code_reg(code_reg):
 
 #-------------------------------------------------------------------------------
 def analyze_meta_reg(meta_reg):
+  global metadata
+
   print('analyze_meta_reg')
 
   defs      = [
