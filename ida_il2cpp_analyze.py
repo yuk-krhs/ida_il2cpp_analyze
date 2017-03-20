@@ -3,6 +3,7 @@
 import sys
 import os
 import re
+import importlib
 
 try:
   import idc
@@ -11,6 +12,13 @@ try:
   import ida_il2cpp_metadata
 except:
   sys.exit()
+
+try:
+  importlib.reload(ida_il2cpp_metadata)
+except:
+  reload(ida_il2cpp_metadata)
+
+
 
 #-------------------------------------------------------------------------------
 name_re     = re.compile(r'^\((((a)|(off_))\w+)')
@@ -21,19 +29,46 @@ is_x86 = False
 is_x64 = False
 is_ARM = False
 
-def load_metadata():
-  global metadata
+primitive_types = [
+	"END",
+	"void",
+	"bool",
+	"char",
+	"sbyte",
+	"byte",
+	"short",
+	"ushort",
+	"int",
+	"uint",
+	"long",
+	"ulong",
+	"float",
+	"double",
+	"String",
+	"Ptr",
+	"REF",
+	"ValueType",
+	"Class",
+	"var",
+	"array",
+	"Generic",
+	"TypedREF",
+	"int",
+	"uint",
+	"FuncPtr",
+	"Object",
+	"sArray",
+	"mvar",
+	"cmod_reqd",
+	"cmod_opt",
+	"internal_type",
+	"modifier",
+	"sentinel",
+	"pinned",
+	"enum"
+]
 
-  print('load_metadata')
 
-  dir = os.path.dirname(idc.GetIdbPath())
-  metafile = dir + '/' + 'global-metadata.dat'
-
-  if not os.path.exists(metafile):
-    print('  File not found. %s' % metafile)
-    return
-
-  metadata = ida_il2cpp_metadata.IL2CppMetaData(metafile)
 
 #-------------------------------------------------------------------------------
 def main():
@@ -54,13 +89,15 @@ def main():
   def_struct()
   load_metadata()
 
+  #return
+
   code_reg, meta_reg = analyze_reg()
 
   if code_reg != idc.BADADDR:
     analyze_code_reg(code_reg)
 
   if meta_reg != idc.BADADDR:
-    analyze_meta_reg(meta_reg)
+    analyze_meta_reg(meta_reg, code_reg)
 
   init_array = analyze_init_array()
   analyze_invoke_unityengine()
@@ -70,6 +107,87 @@ def main():
   print('%X: %s' % (code_reg, idc.Name(code_reg)))
   print('%X: %s' % (meta_reg, idc.Name(meta_reg)))
   print('%X: .init_array' % (init_array))
+
+#-------------------------------------------------------------------------------
+def load_metadata():
+  global metadata
+
+  print('load_metadata')
+
+  dir = os.path.dirname(idc.GetIdbPath())
+  metafile = dir + '/' + 'global-metadata.dat'
+
+  if not os.path.exists(metafile):
+    print('  File not found. %s' % metafile)
+    return
+
+  metadata = ida_il2cpp_metadata.IL2CppMetaData(metafile)
+
+  #map_metadata(metafile, 0x70000000)
+
+#-------------------------------------------------------------------------------
+def map_metadata(file, addr):
+  flags = 0
+  flags |= 0x0001 # NEF_SEGS
+  size = os.stat(file).st_size
+
+  li = idaapi.open_linput(file, False);
+
+  #print('li = %s' % str(li))
+
+  rc = idaapi.load_binary_file(file, li, flags, 0, 0, addr, size)	
+
+  #print('rc = %d' % rc)
+
+  names = [
+    'stringLiteral', 'stringLiteralData', 'strings', 'events', 'properties', 'methods',
+    'parameterDefaultValues', 'fieldDefaultValues', 'fieldAndParameterDefaultValueData',
+    'fieldMarshaledSizes', 'parameters', 'fields', 'genericParameters',
+    'genericParameterConstraints', 'genericContainers', 'nestedTypes', 'interfaces',
+    'vtableMethods', 'interfaceOffsets', 'typeDefinitions', 'rgctxEntries', 'images',
+    'assemblies', 'metadataUsageLists', 'metadataUsagePairs', 'fieldRefs',
+    'referencedAssemblies', 'attributesInfo', 'attributeTypes',
+  ]
+
+  baseaddr = addr
+
+  idc.MakeDword(addr + 0)
+  idc.MakeNameEx(addr + 0, 'META_Sig', idc.SN_NOWARN | idc.SN_AUTO)
+  idc.MakeDword(addr + 4)
+  idc.MakeNameEx(addr + 0, 'META_Version', idc.SN_NOWARN | idc.SN_AUTO)
+
+  for i in range(len(names)):
+    descaddr = baseaddr + 8 + i * 8
+
+    idc.MakeStruct(descaddr, 'OffsetAndCount')
+    idc.MakeNameEx(descaddr, 'META_%sDesc' % names[i], idc.SN_NOWARN | idc.SN_AUTO)
+
+    dataaddr = baseaddr + idc.Dword(descaddr + 0)
+    datasize = idc.Dword(descaddr + 4)
+
+    idc.MakeNameEx(dataaddr, 'META_%s' % names[i], idc.SN_NOWARN | idc.SN_AUTO)
+
+  # string literal
+  descaddr  = idc.LocByName('META_stringLiteralDesc')
+  size1     = idc.Dword(descaddr + 4)
+  addr1     = idc.LocByName('META_stringLiteral')
+  addr1end  = addr1 + size1
+  addr2     = idc.LocByName('META_stringLiteralData')
+
+  #print('addr1: %X' % (addr1))
+  #print('addr2: %X' % (addr2))
+
+  while addr1 < addr1end:
+    strsize = idc.Dword(addr1 + 0)
+    stroff  = idc.Dword(addr1 + 4)
+
+    #print('%X - %X' % (addr2 + stroff, addr2 + stroff + strsize))
+
+    idc.MakeStr(addr2 + stroff, addr2 + stroff + strsize)
+
+    addr1 += 8
+
+  idc.Jump(baseaddr)
 
 #-------------------------------------------------------------------------------
 def new_struct(name):
@@ -159,6 +277,11 @@ def def_struct():
     mid = idc.AddStrucMember(id, 'static_fields_size',                        0x08,  0x20000400,  -1,  4)
     mid = idc.AddStrucMember(id, 'thread_static_fields_size',                 0x0C,  0x20000400,  -1,  4)
 
+  if 0xFFFFFFFF == idc.GetStrucIdByName('OffsetAndCount'):
+    id  = new_struct('OffsetAndCount')
+    mid = idc.AddStrucMember(id, 'offset',                                    0x00,  0x25500400,  0X70000000,  4,  0XFFFFFFFF,  0,  0x000002)
+    mid = idc.AddStrucMember(id, 'count',                                     0x04,  0x20000400,  -1,  4)
+
 #-------------------------------------------------------------------------------
 def analyze_invoke_unityengine():
   print('analyze_invoke_unityengine')
@@ -208,7 +331,7 @@ def analyze_invoke(funcaddr):
         methodname = idc.GetString(nameaddr, -1, idc.ASCSTR_C)
         methodname = method_re.match(methodname).group(0)
 
-        print('%08X = %s' % (func_st, methodname))
+        #print('%08X = %s' % (func_st, methodname))
 
         idc.MakeNameEx(func_st, methodname, idc.SN_NOWARN | idc.SN_AUTO)
 
@@ -283,7 +406,7 @@ def analyze_invoke2(funcaddr):
         else:
           name    = method_re.match(name).group(0)
 
-          print('    %X: %s @%s' % (func_st, name, libname))
+          #print('    %X: %s @%s' % (func_st, name, libname))
 
           idc.MakeNameEx(func_st, name, idc.SN_NOWARN | idc.SN_AUTO)
           break
@@ -396,7 +519,14 @@ def analyze_code_reg(code_reg):
     defaddr = make_func_table(True, defaddr, names[i])
 
 #-------------------------------------------------------------------------------
-def analyze_meta_reg(meta_reg):
+def make_name(addr, name):
+  try:
+    idc.MakeNameEx(int(addr), str(name), idc.SN_NOWARN | idc.SN_AUTO)
+  except:
+    print('  **INVALID NAME: %s' % (name))
+
+#-------------------------------------------------------------------------------
+def analyze_meta_reg(meta_reg, code_reg):
   global metadata
 
   print('analyze_meta_reg')
@@ -421,6 +551,139 @@ def analyze_meta_reg(meta_reg):
       defaddr = make_ref_table(True, defaddr, i[1], i[2], i[3])
     else:
       defaddr = make_table(True, defaddr, i[1], i[2], i[3], i[0])
+
+  # metadata matching
+  typecount  = 0
+
+  for i in metadata.images:
+    """
+    print('%s' % (i.name))
+    print('  typeStart:       %d' % (i.typeStart))
+    print('  typeCount:       %d' % (i.typeCount))
+    print('  entryPointIndex: %d' % (i.entryPointIndex))
+    print('  token:           %X' % (i.token))
+    """
+    typecount += i.typeCount
+
+  # type
+  count_type        = idc.Dword(meta_reg + 8*3 + 0)
+  addr_type         = idc.Dword(meta_reg + 8*3 + 4)
+  count_fieldoff    = idc.Dword(meta_reg + 8*5 + 0)
+  addr_fieldoff     = idc.Dword(meta_reg + 8*5 + 4)
+  count_typedefsize = idc.Dword(meta_reg + 8*6 + 0)
+  addr_typedefsize  = idc.Dword(meta_reg + 8*6 + 4)
+  addr_methods      = idc.Dword(code_reg + 4)
+
+  print('count_type               = %d' % (count_type))
+  print('addr_type                = %X' % (addr_type))
+  print('typecount                = %d' % typecount)
+  print('metadata.typeDefinitions = %d' % (len(metadata.typeDefinitions)))
+  print('count_fieldoff           = %d' % (count_fieldoff))
+  print('count_typedefsize        = %d' % (count_typedefsize))
+  print('addr_fieldoff            = %X' % (addr_fieldoff))
+  print('addr_typedefsize         = %X' % (addr_typedefsize))
+  print('addr_methods             = %X' % (addr_methods))
+
+  assert count_fieldoff    == len(metadata.typeDefinitions), 'ERROR'
+  assert count_typedefsize == len(metadata.typeDefinitions), 'ERROR'
+
+  for i in metadata.images:
+    # image
+    print('%s' % (i.name))
+    print('  typeStart:       %d' % (i.typeStart))
+    print('  typeCount:       %d' % (i.typeCount))
+    print('  entryPointIndex: %d' % (i.entryPointIndex))
+    print('  token:           %X' % (i.token))
+
+    imgname = i.name
+
+    for j in range(i.typeCount):
+      typeindex     = i.typeStart + j
+      metadata_type = metadata.typeDefinitions[typeindex]
+      name          = metadata_type.name
+
+      fieldoff      = idc.Dword(addr_fieldoff    + typeindex * 4)
+      typedefsize   = idc.Dword(addr_typedefsize + typeindex * 4)
+
+      print('  Typw: %4d %08X/%08X: %s' % (typeindex, fieldoff, typedefsize, name))
+
+      # fields
+      #print('metadata_type.field_count = %d' % metadata_type.field_count)
+      #print('metadata_type.fieldStart  = %d' % metadata_type.fieldStart)
+
+      if metadata_type.field_count > 0:
+        print('    Fields')
+
+        for k in range(metadata_type.field_count):
+          fieldindex    = metadata_type.fieldStart + k                  # metadata
+          field         = metadata.fields[fieldindex]                   # metadata
+          fieldtypeaddr = idc.Dword(addr_type + 8 * field.typeIndex)    # mata_reg
+          is_class, fieldtypename, value1, value2, attrs, type, num_mods, byref, pinned = \
+            get_typeinfo_by_metareg(fieldtypeaddr)
+
+          print('      %s : %s' % (field.name.ljust(32), fieldtypename))
+
+      # methods
+      #print('metadata_type.method_count = %d' % metadata_type.method_count)
+      #print('metadata_type.methodStart  = %d' % metadata_type.methodStart)
+
+      if metadata_type.method_count > 0:
+        print('    Methods')
+
+        for k in range(metadata_type.method_count):
+          methodindex   = metadata_type.methodStart + k                 # metadata
+          method        = metadata.methods[methodindex]                 # metadata
+          rettypeaddr   = idc.Dword(addr_type + 8 * method.returnType)  # mata_reg
+          is_class, rettypename, value1, value2, attrs, type, num_mods, byref, pinned = \
+            get_typeinfo_by_metareg(rettypeaddr)
+
+          codeaddr = idc.Dword(addr_methods + method.methodIndex * 4)
+          oldname  = idc.Name(codeaddr)
+
+          print('      %08X: %s : %s' % (codeaddr, method.name, rettypename))
+
+          if oldname.startswith('sub_'):
+            funcname = 'ctor_%s' % name if method.name == '.ctor' \
+                  else '%s::%s' % (name, method.name)
+
+            make_name(codeaddr, funcname)
+
+#-------------------------------------------------------------------------------
+def get_typeinfo_by_metareg(typeaddr):
+  global metadata
+
+  value1   = idc.Dword(typeaddr + 0)
+  value2   = idc.Dword(typeaddr + 4)
+  attrs    = (value2 >>  0) & 0xFFFF
+  type     = (value2 >> 16) &   0xFF
+  num_mods = (value2 >> 24) &   0x3F
+  byref    = (value2 >> 30) &    0x1
+  pinned   = (value2 >> 31) &    0x1
+
+  # IL2CPP_TYPE_CLASS, IL2CPP_TYPE_VALUETYPE
+  if type == 0x12 or type == 0x11:
+    #print('    type is class:   index = %d' % value1)
+
+    typedef = metadata.typeDefinitions[value1]
+
+    return (True, typedef.name, value1, value2, attrs, type, num_mods, byref, pinned)
+
+  # IL2CPP_TYPE_GENERICINST
+  if type == 0x15:
+    #print('    type is generic: index = %X' % value1)
+
+    typename = get_generic_typename(value1)
+
+    return (True, typename, value1, value2, attrs, type, num_mods, byref, pinned)
+
+  if type >= len(primitive_types):
+    return (True, '**type_%d' % type, value1, value2, attrs, type, num_mods, byref, pinned)
+
+  return (False, primitive_types[type], value1, value2, attrs, type, num_mods, byref, pinned)
+
+#-------------------------------------------------------------------------------
+def get_generic_typename(gentypeaddr):
+  return '<GENERIC>'
 
 #-------------------------------------------------------------------------------
 def get_resolve():

@@ -6,13 +6,6 @@ import struct
 import re
 import collections
 
-try:
-  import idc
-  import idaapi
-  import idautils
-except:
-  sys.exit()
-
 def read_all_bytes(file):
   with open(file, 'rb') as f:
     return f.read()
@@ -34,7 +27,7 @@ class IL2CppMetaData(DataObject):
 
   def parse(self):
     self.defs = [
-      ('stringLiteral',                         None),
+      ('stringLiteral',                         (8, '2i', ['size', 'offset'])),
       ('stringLiteralData',                     None),
       ('strings',                               None),
       ('events',                                None),
@@ -87,6 +80,8 @@ class IL2CppMetaData(DataObject):
       if i[1] is not None:
         self.parse_data(i[0], i[1])
 
+    self.parse_string_literal()
+
   def parse_header(self):
     print('parse_header')
 
@@ -112,6 +107,23 @@ class IL2CppMetaData(DataObject):
     #self.header.dump()
 
     self.strings = self.header.regions['strings']
+
+  def parse_string_literal(self):
+    print('parse_string_literal')
+
+    baseaddr = self.header.regions['stringLiteralData'][0]
+    idx = 0
+    self.stringLiterals = {}
+
+    for i in self.stringLiteral:
+      start = baseaddr + i.offset
+      s = self.data[start:start+i.size].decode("utf-8")
+
+      self.stringLiterals[i.offset] = s
+
+      #print('  %6d: %08X:%08X "%s"' % (idx, i.offset, start, s))
+
+      idx += 1
 
   def parse_data(self, name, define):
     elemsize, format, names = define
