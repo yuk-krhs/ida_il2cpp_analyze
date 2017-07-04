@@ -28,6 +28,8 @@ metadata    = None
 is_x86 = False
 is_x64 = False
 is_ARM = False
+mod_addr_min = 0x7FFFFFF
+mod_addr_max = 0
 
 primitive_types = [
 	"END",
@@ -72,6 +74,8 @@ primitive_types = [
 
 #-------------------------------------------------------------------------------
 def main():
+  global mod_addr_min
+  global mod_addr_max
   #print('INF_VERSION:  %s' % (str(idc.GetLongPrm(idc.INF_VERSION))))
   #print('INF_PROCNAME: %s' % (str(idc.GetLongPrm(idc.INF_PROCNAME))))
   #print('INF_COMPILER: %s' % (str(idc.GetLongPrm(idc.INF_COMPILER))))
@@ -82,16 +86,42 @@ def main():
   is_x86 = processor == 'metapc'
   is_ARM = processor == 'ARM'
 
-  if not is_x86:
-    idc.Message('*** Sorry, currently only supported x86.\n')
-    return
+  #if not is_x86:
+  #  idc.Message('*** Sorry, currently only supported x86.\n')
+  #  return
 
-  def_struct()
+  addr = idc.MinEA()
+
+  while True:
+    seg = idc.NextSeg(addr)
+
+    if seg == idc.BADADDR:
+      break
+
+    name = idc.SegName(addr)
+
+    seg_st = idc.GetSegmentAttr(seg, idc.SEGATTR_START)
+    seg_en = idc.GetSegmentAttr(seg, idc.SEGATTR_END)
+
+    print('%08X-%08X: %s' % (seg_st, seg_en, name))
+
+    if name.startswith('.'):
+
+      if seg_st < mod_addr_min:
+        mod_addr_min = seg_st
+
+      if seg_en > mod_addr_max:
+        mod_addr_max = seg_en
+
+    addr = seg_en - 4
+
+  print('module range = %08X-%08X' % (mod_addr_min, mod_addr_max))
+
+  init_array = analyze_init_array()
+
   load_metadata()
 
-  #return
-
-  code_reg, meta_reg = analyze_reg()
+  code_reg, meta_reg = search_reg()
 
   if code_reg != idc.BADADDR:
     analyze_code_reg(code_reg)
@@ -99,7 +129,6 @@ def main():
   if meta_reg != idc.BADADDR:
     analyze_meta_reg(meta_reg, code_reg)
 
-  init_array = analyze_init_array()
   analyze_invoke_unityengine()
   analyze_invoke_library()
 
@@ -107,6 +136,7 @@ def main():
   print('%X: %s' % (code_reg, idc.Name(code_reg)))
   print('%X: %s' % (meta_reg, idc.Name(meta_reg)))
   print('%X: .init_array' % (init_array))
+
 
 #-------------------------------------------------------------------------------
 def load_metadata():
@@ -123,7 +153,9 @@ def load_metadata():
 
   metadata = ida_il2cpp_metadata.IL2CppMetaData(metafile)
 
-  #map_metadata(metafile, 0x70000000)
+  def_struct()
+
+  map_metadata(metafile, 0x70000000)
 
 #-------------------------------------------------------------------------------
 def map_metadata(file, addr):
@@ -199,6 +231,8 @@ def new_struct(name):
 
 #-------------------------------------------------------------------------------
 def def_struct():
+  global metadata
+
   print('def_struct')
 
   if 0xFFFFFFFF == idc.GetStrucIdByName('CodeRegistration'):
@@ -217,10 +251,12 @@ def def_struct():
     mid = idc.AddStrucMember(id, 'genericMethodPointers',                     0x2C,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
     mid = idc.AddStrucMember(id, 'invokerPointersCount',                      0x30,  0x20000400,  -1,  4)
     mid = idc.AddStrucMember(id, 'invokerPointers',                           0x34,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
-    mid = idc.AddStrucMember(id, 'customAttributeCount',                      0x38,  0x20000400,  -1,  4)
-    mid = idc.AddStrucMember(id, 'customAttributeGenerators',                 0x3C,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
-    mid = idc.AddStrucMember(id, 'guidCount',                                 0x40,  0x20000400,  -1,  4)
-    mid = idc.AddStrucMember(id, 'guids',                                     0x44,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
+
+    if metadata.header.version < 23:
+      mid = idc.AddStrucMember(id, 'customAttributeCount',                      0x38,  0x20000400,  -1,  4)
+      mid = idc.AddStrucMember(id, 'customAttributeGenerators',                 0x3C,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
+      mid = idc.AddStrucMember(id, 'guidCount',                                 0x40,  0x20000400,  -1,  4)
+      mid = idc.AddStrucMember(id, 'guids',                                     0x44,  0x25500400,  0XFFFFFFFF,  4,  0XFFFFFFFF,  0,  0x000002)
 
   if 0xFFFFFFFF == idc.GetStrucIdByName('MetaRegistration'):
     id  = new_struct('MetaRegistration')
@@ -283,6 +319,128 @@ def def_struct():
     mid = idc.AddStrucMember(id, 'count',                                     0x04,  0x20000400,  -1,  4)
 
 #-------------------------------------------------------------------------------
+def search_reg():
+  global mod_addr_min
+  global mod_addr_max
+
+  code_reg = idc.LocByName('g_code_reg')
+  meta_reg = idc.LocByName('g_meta_reg')
+
+  print('searching metareg')
+
+  if meta_reg == idc.BADADDR:
+    meta_reg = search_meta_reg(mod_addr_min + 56, mod_addr_max - 256)
+
+    if meta_reg == idc.BADADDR:
+      print('Failed to search metareg')
+      raise
+
+    print('%08X: g_meta_reg' % meta_reg)
+    idc.MakeName(meta_reg, 'g_meta_reg')
+
+  if code_reg == idc.BADADDR:
+    print('searching codereg')
+
+    code_reg = search_code_reg(meta_reg - 256, meta_reg - 16)
+
+    if code_reg == idc.BADADDR:
+      print('Failed to search codereg')
+      raise
+
+    print('%08X: g_code_reg' % code_reg)
+    idc.MakeName(code_reg, 'g_code_reg')
+
+  #if code_reg == idc.BADADDR or meta_reg == idc.BADADDR:
+  #  return analyze_reg()
+
+  return code_reg, meta_reg
+
+#-------------------------------------------------------------------------------
+def is_meta_reg(addr):
+  global mod_addr_min
+  global mod_addr_max
+
+  for offset, count_min, count_max, addr_min, addr_max, nozero, name in [
+    ( 0,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'genericClasses'),
+    ( 8,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'genericInsts'),
+    (16,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'genericMethodTable'),
+    (24,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'types'),
+    (32,  0, 0x20000, mod_addr_min, mod_addr_max, True, 'methodSpecs'),
+    (40,  0, 0x20000, mod_addr_min, mod_addr_max, True, 'fieldOffsets'),
+    (48,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'typeDefinitionsSizes'),
+    (56,  0, 0x10000, mod_addr_min, mod_addr_max, True, 'metadataUsages') ]:
+
+    if valid_count_and_addr(addr + offset, count_min, count_max, addr_min, addr_max, nozero):
+      print('OK: %s' % name)
+    else:
+      print('NG: %s' % name)
+      return False
+
+  return True
+
+#-------------------------------------------------------------------------------
+def is_code_reg(addr):
+  global mod_addr_min
+  global mod_addr_max
+
+  for offset, count_min, count_max, addr_min, addr_max, nozero, name in [
+    ( 0,  0, 0x20000, mod_addr_min, mod_addr_max, True,  'methodPointers'),
+    ( 8,  0, 0x10000, mod_addr_min, mod_addr_max, True,  'delegateWrappersFromNativeToManaged'),
+    (16,  0, 0x10000, mod_addr_min, mod_addr_max, True,  'delegateWrappersFromManagedToNative'),
+    (24,  0, 0x10000, mod_addr_min, mod_addr_max, True,  'marshalingFunctionsCount'),
+    (32,  0, 0x10000, mod_addr_min, mod_addr_max, False, 'ccwMarshalingFunctionsCount'),
+    (40,  0, 0x10000, mod_addr_min, mod_addr_max, True,  'genericMethodPointersCount'),
+    (48,  0, 0x10000, mod_addr_min, mod_addr_max, True,  'invokerPointersCount')]:
+
+    if valid_count_and_addr(addr + offset, count_min, count_max, addr_min, addr_max, nozero):
+      print('OK: %s' % name)
+    else:
+      print('NG: %s' % name)
+      return False
+
+  return True
+
+def valid_count_and_addr(addr, count_min, count_max, addr_min, addr_max, nozero):
+  count = idc.Dword(addr + 0)
+  addr  = idc.Dword(addr + 4)
+
+  if nozero and (count == 0 or addr == 0):
+    return False
+
+  if count == 0 and addr == 0:
+    return True
+
+  return count >= count_min and count <= count_max and addr >= addr_min and addr < addr_max
+
+#-------------------------------------------------------------------------------
+def search_meta_reg(addr_st, addr_en):
+  type_count = len(metadata.typeDefinitions)
+  addr = addr_st;
+
+  while addr < addr_en:
+    value = idc.Dword(addr)
+
+    if value == type_count:
+      if is_meta_reg(addr - 48):
+        return addr - 48
+
+    addr += 4
+
+  return idc.BADADDR
+
+#-------------------------------------------------------------------------------
+def search_code_reg(addr_st, addr_en):
+  addr = addr_st;
+
+  while addr < addr_en:
+    if is_code_reg(addr):
+      return addr
+
+    addr += 4
+
+  return idc.BADADDR
+
+#-------------------------------------------------------------------------------
 def analyze_invoke_unityengine():
   print('analyze_invoke_unityengine')
 
@@ -303,6 +461,9 @@ def analyze_invoke_unityengine():
 #-------------------------------------------------------------------------------
 def analyze_invoke(funcaddr):
   #print('funcaddr : %08X - %s' % (funcaddr, GetFunctionName(funcaddr)))
+
+  if is_ARM:
+    return
 
   func_st   = idc.GetFunctionAttr(funcaddr, idc.FUNCATTR_START)
   func_en   = idc.GetFunctionAttr(funcaddr, idc.FUNCATTR_END)
@@ -449,6 +610,12 @@ def analyze_init_array():
 def analyze_reg():
   print('analyze_reg')
 
+  if is_x86:
+    analyze_reg_x86()
+  elif is_ARM:
+    analyze_reg_ARM()
+
+def analyze_reg_x86():
   name = '._ZN6il2cpp2vm13MetadataCache8RegisterEPK22Il2CppCodeRegistrationPK26Il2CppMetadataRegistrationPK20Il2CppCodeGenOptions'
   addr = idc.LocByName(name)
   addr = idc.RfirstB(addr)
@@ -490,6 +657,65 @@ def analyze_reg():
           return (code_reg, meta_reg)
 
     addr = idc.NextHead(addr, func_en)
+
+  return (idc.BADADDR, idc.BADADDR)
+
+def code_match(addr, code):
+  for i in range(0, len(code)):
+    if idc.Dword(addr) != code[i]:
+      return False
+
+  return True
+
+#-------------------------------------------------------------------------------
+def analyze_reg_ARM():
+  """
+  .text:012B285C             sub_12B285C                             ; DATA XREF: sub_222E74+14o
+  .text:012B285C                                                     ; .text:off_222EA0o
+  .text:012B285C 1C 00 9F E5                 LDR             R0, =(_GLOBAL_OFFSET_TABLE_ - 0x12B286C)
+  .text:012B2860 20 10 9F E5                 LDR             R1, =(off_17C9B34 - 0x17CA100)
+  .text:012B2864 00 20 8F E0                 ADD             R2, PC, R0 ; _GLOBAL_OFFSET_TABLE_
+  .text:012B2868 14 C0 9F E5                 LDR             R12, =(g_code_reg - 0x17CA100)
+  .text:012B286C 18 30 9F E5                 LDR             R3, =(dword_154EE5C - 0x17CA100)
+  .text:012B2870 02 10 91 E7                 LDR             R1, [R1,R2] ; g_meta_reg
+  .text:012B2874 02 00 8C E0                 ADD             R0, R12, R2 ; g_code_reg
+  .text:012B2878 02 20 83 E0                 ADD             R2, R3, R2 ; dword_154EE5C
+  .text:012B287C C8 AF BD EA                 B               j__ZN6il2cpp2vm13MetadataCache8RegisterEPK22Il2CppCodeRegistrationPK26Il2CppMetadataRegistrationPK20Il2CppCodeGenOptions ; il2cpp::vm::MetadataCache::Register(Il2CppCodeRegistration const*,Il2CppMetadataRegistration const*,Il2CppCodeGenOptions const*)
+  .text:012B287C             ; End of function sub_12B285C
+  """
+  print('analyze_reg_ARM')
+
+  code = [0x1C009FE5, 0x20109FE5, 0x00208FE0, 0x14C09FE5, 0x18309FE5, 0x021091E7, 0x02008CE0, 0x022083E0]
+  ea = idc.MinEA()
+
+  while True:
+    func = idc.NextFuction(ea)
+
+    if func == idc.BADADDR:
+      break
+
+    start = idc.GetFunctionAttr(idc.FUNCATTR_START)
+    end   = idc.GetFunctionAttr(idc.FUNCATTR_END)
+    size  = end - start
+
+    if size == 36:
+      if code_match(start, code):
+        return analyze_reg_ARM_func(start)
+
+    ea = start + 4
+
+  return (idc.BADADDR, idc.BADADDR)
+
+#-------------------------------------------------------------------------------
+def analyze_reg_ARM_func(addr):
+  print('analyze_reg_ARM_func')
+
+  mnem = idc.GetMnem(addr + 32)
+  opr0 = idc.GetOpnd(addr + 32, 0)
+
+  print('%s %s' % (mnem, opr0))
+
+  # todo: Not Implemented
 
   return (idc.BADADDR, idc.BADADDR)
 
@@ -786,7 +1012,7 @@ def make_func(addr, index, name):
 
     #print('    %08X: %s' % (funcaddr, funcname))
 
-    if not funcname.startswith('sub_'):
+    if not funcname.startswith('sub_') and not funcname.startswith('nullsub'):
       print('    #CHECK# %X: %s' % (addr, funcname))
   else:
     #print('    MakeFunction(0x%X)' % addr)

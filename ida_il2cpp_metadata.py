@@ -26,54 +26,6 @@ class IL2CppMetaData(DataObject):
     self.parse()
 
   def parse(self):
-    self.defs = [
-      ('stringLiteral',                         (8, '2i', ['size', 'offset'])),
-      ('stringLiteralData',                     None),
-      ('strings',                               None),
-      ('events',                                None),
-      ('properties',                            (72, '18i', [
-        'nameIndex', 'field04', 'field08', 'field0C', 'field10', 'field14', 'field18', 'field1C',
-        'field20', 'field24', 'field28', 'field2C', 'field30', 'field34', 'field38', 'field3C',
-        'field40', 'field44'])),
-      ('methods',                               (56, '11iI4H', [
-        'nameIndex', 'declaringType', 'returnType', 'parameterStart', 'customAttributeIndex',
-        'genericContainerIndex', 'methodIndex', 'invokerIndex', 'delegateWrapperIndex',
-        'rgctxStartIndex', 'rgctxCount', 'token', 'flags', 'iflags', 'slot', 'parameterCount'])),
-      ('parameterDefaultValues',                None),
-      ('fieldDefaultValues',                    None),
-      ('fieldAndParameterDefaultValueData',     None),
-      ('fieldMarshaledSizes',                   None),
-      ('parameters',                            None),
-      ('fields',                                (16, '3iI', [
-        'nameIndex', 'typeIndex', 'customAttributeIndex', 'token'])),
-      ('genericParameters',                     None),
-      ('genericParameterConstraints',           None),
-      ('genericContainers',                     None),
-      ('nestedTypes',                           None),
-      ('interfaces',                            None),
-      ('vtableMethods',                         None),
-      ('interfaceOffsets',                      None),
-      ('typeDefinitions',                       (120, '24i8H2i', [
-        'nameIndex', 'namespaceIndex', 'customAttributeIndex', 'byvalTypeIndex', 'byrefTypeIndex',
-        'declaringTypeIndex', 'parentIndex', 'elementTypeIndex', 'rgctxStartIndex', 'rgctxCount',
-        'genericContainerIndex', 'delegateWrapperFromManagedToNativeIndex', 'marshalingFunctionsIndex',
-        'ccwFunctionIndex', 'guidIndex', 'flags', 'fieldStart', 'methodStart', 'eventStart',
-        'propertyStart', 'nestedTypesStart', 'interfacesStart', 'vtableStart', 'interfaceOffsetsStart',
-        'method_count', 'property_count', 'field_count', 'event_count', 'nested_type_count', 'vtable_count',
-        'interfaces_count', 'interface_offsets_count', 'bitfield', 'token'])),
-      ('rgctxEntries',                          None),
-      ('images',                                (24, '5iI', [
-        'nameIndex', 'assemblyIndex', 'typeStart', 'typeCount', 'entryPointIndex', 'token'])),
-      ('assemblies',                            (16, '4i', [
-        'imageIndex', 'customAttributeIndex', 'referencedAssemblyStart', 'referencedAssemblyCount'])),
-      ('metadataUsageLists',                    None),
-      ('metadataUsagePairs',                    None),
-      ('fieldRefs',                             None),
-      ('referencedAssemblies',                  None),
-      ('attributesInfo',                        None),
-      ('attributeTypes',                        None),
-    ]
-
     self.parse_header()
 
     for i in self.defs:
@@ -89,10 +41,106 @@ class IL2CppMetaData(DataObject):
 
     self.header = DataObject()
     self.header.sanity   = values[0]
-    self.header.vedrsion = values[1]
-    self.header.regions = {}
+    self.header.version  = values[1]
+    self.header.regions  = {}
 
     print('  %s' % (str(self.header.sanity)))
+
+    if self.header.version >= 23:
+      self.defs = [
+        ('stringLiteral',                         (8, '2i', ['size', 'offset'])),
+        ('stringLiteralData',                     None),
+        ('strings',                               None),
+        ('events',                                None),
+        ('properties',                            (72, '18i', [
+          'nameIndex', 'field04', 'field08', 'field0C', 'field10', 'field14', 'field18', 'field1C',
+          'field20', 'field24', 'field28', 'field2C', 'field30', 'field34', 'field38', 'field3C',
+          'field40', 'field44'])),
+        ('methods',                               (56, '11iI4H', [
+          'nameIndex', 'declaringType', 'returnType', 'parameterStart', 'customAttributeIndex',
+          'genericContainerIndex', 'methodIndex', 'invokerIndex', 'delegateWrapperIndex',
+          'rgctxStartIndex', 'rgctxCount', 'token', 'flags', 'iflags', 'slot', 'parameterCount'])),
+        ('parameterDefaultValues',                None),
+        ('fieldDefaultValues',                    None),
+        ('fieldAndParameterDefaultValueData',     None),
+        ('fieldMarshaledSizes',                   None),
+        ('parameters',                            None),
+        ('fields',                                (16, '3iI', [
+          'nameIndex', 'typeIndex', 'customAttributeIndex', 'token'])),
+        ('genericParameters',                     None),
+        ('genericParameterConstraints',           None),
+        ('genericContainers',                     None),
+        ('nestedTypes',                           None),
+        ('interfaces',                            None),
+        ('vtableMethods',                         None),
+        ('interfaceOffsets',                      None),
+        ('typeDefinitions',                       (104, '20i8H2i', [
+          'nameIndex', 'namespaceIndex', 'customAttributeIndex', 'byvalTypeIndex', 'byrefTypeIndex',
+          'declaringTypeIndex', 'parentIndex', 'elementTypeIndex', 'rgctxStartIndex', 'rgctxCount',
+          'genericContainerIndex', 'flags', 'fieldStart', 'methodStart', 'eventStart',
+          'propertyStart', 'nestedTypesStart', 'interfacesStart', 'vtableStart', 'interfaceOffsetsStart',
+          'method_count', 'property_count', 'field_count', 'event_count', 'nested_type_count', 'vtable_count',
+          'interfaces_count', 'interface_offsets_count', 'bitfield', 'token'])),
+        ('rgctxEntries',                          None),
+        ('images',                                (24, '5iI', [
+          'nameIndex', 'assemblyIndex', 'typeStart', 'typeCount', 'entryPointIndex', 'token'])),
+        ('assemblies',                            (20, '5i', [
+          'imageIndex', 'customAttributeIndex', 'referencedAssemblyStart', 'referencedAssemblyCount', 'aname'])),
+        ('metadataUsageLists',                    None),
+        ('metadataUsagePairs',                    None),
+        ('fieldRefs',                             None),
+        ('referencedAssemblies',                  None),
+        ('attributesInfo',                        None),
+        ('attributeTypes',                        None),
+      ]
+    else:
+      self.defs = [
+        ('stringLiteral',                         (8, '2i', ['size', 'offset'])),
+        ('stringLiteralData',                     None),
+        ('strings',                               None),
+        ('events',                                None),
+        ('properties',                            (72, '18i', [
+          'nameIndex', 'field04', 'field08', 'field0C', 'field10', 'field14', 'field18', 'field1C',
+          'field20', 'field24', 'field28', 'field2C', 'field30', 'field34', 'field38', 'field3C',
+          'field40', 'field44'])),
+        ('methods',                               (56, '11iI4H', [
+          'nameIndex', 'declaringType', 'returnType', 'parameterStart', 'customAttributeIndex',
+          'genericContainerIndex', 'methodIndex', 'invokerIndex', 'delegateWrapperIndex',
+          'rgctxStartIndex', 'rgctxCount', 'token', 'flags', 'iflags', 'slot', 'parameterCount'])),
+        ('parameterDefaultValues',                None),
+        ('fieldDefaultValues',                    None),
+        ('fieldAndParameterDefaultValueData',     None),
+        ('fieldMarshaledSizes',                   None),
+        ('parameters',                            None),
+        ('fields',                                (16, '3iI', [
+          'nameIndex', 'typeIndex', 'customAttributeIndex', 'token'])),
+        ('genericParameters',                     None),
+        ('genericParameterConstraints',           None),
+        ('genericContainers',                     None),
+        ('nestedTypes',                           None),
+        ('interfaces',                            None),
+        ('vtableMethods',                         None),
+        ('interfaceOffsets',                      None),
+        ('typeDefinitions',                       (120, '24i8H2i', [
+          'nameIndex', 'namespaceIndex', 'customAttributeIndex', 'byvalTypeIndex', 'byrefTypeIndex',
+          'declaringTypeIndex', 'parentIndex', 'elementTypeIndex', 'rgctxStartIndex', 'rgctxCount',
+          'genericContainerIndex', 'delegateWrapperFromManagedToNativeIndex', 'marshalingFunctionsIndex',
+          'ccwFunctionIndex', 'guidIndex', 'flags', 'fieldStart', 'methodStart', 'eventStart',
+          'propertyStart', 'nestedTypesStart', 'interfacesStart', 'vtableStart', 'interfaceOffsetsStart',
+          'method_count', 'property_count', 'field_count', 'event_count', 'nested_type_count', 'vtable_count',
+          'interfaces_count', 'interface_offsets_count', 'bitfield', 'token'])),
+        ('rgctxEntries',                          None),
+        ('images',                                (24, '5iI', [
+          'nameIndex', 'assemblyIndex', 'typeStart', 'typeCount', 'entryPointIndex', 'token'])),
+          ('assemblies',                            (16, '4i', [
+            'imageIndex', 'customAttributeIndex', 'referencedAssemblyStart', 'referencedAssemblyCount'])),
+        ('metadataUsageLists',                    None),
+        ('metadataUsagePairs',                    None),
+        ('fieldRefs',                             None),
+        ('referencedAssemblies',                  None),
+        ('attributesInfo',                        None),
+        ('attributeTypes',                        None),
+      ]
 
     for i in range(len(self.defs)):
       name = self.defs[i][0]
@@ -129,9 +177,14 @@ class IL2CppMetaData(DataObject):
     elemsize, format, names = define
     baseaddr, size          = self.header.regions[name]
     count                   = size / elemsize
+    rem                     = size % elemsize
     dataarray               = []
 
-    print('%s: %08X: %d/%d=%d' % (name, baseaddr, size, elemsize, count))
+    #if (size % elemsize) != 0:
+    #  print('ERROR: %s: %08X: %d/%d=%d:%d' % (name, baseaddr, size, elemsize, count, size % elemsize))
+    #  raise
+
+    print('%s: %08X: %d/%d=%d:%d' % (name, baseaddr, size, elemsize, count, rem))
 
     for i in range(count):
       addr     = baseaddr + i * elemsize
@@ -179,7 +232,13 @@ class IL2CppMetaData(DataObject):
 
     for i in range(0, 65536):
       if self.data[start + i] == '\0':
-        return self.data[start:start+i].decode("utf-8") 
+        try:
+          s = self.data[start:start+i].decode("utf-8")
+          #print("string: pos=%d/%X start=0x%08X s=\"%s\"" % (pos, pos, start, s))
+          return s
+        except:
+          print("ERROR: Can't decode name string. pos=%d/%X start=0x%08X" % (pos, pos, start))
+          return None
 
     return None
 
